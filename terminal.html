@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OMNI-SHELL | Tactical Terminal v5.0</title>
+    <style>
+        :root { --neon: #00ff41; --bg: #050505; --warn: #ffcc00; --err: #ff3e3e; --dim: #003300; --blue: #00d9ff; }
+        
+        body, html { margin: 0; padding: 0; background: var(--bg); color: var(--neon); font-family: 'Courier New', monospace; height: 100vh; overflow: hidden; }
+
+        /* CRT FX */
+        body::after { content: " "; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 2px, 3px 100%; pointer-events: none; z-index: 2000; }
+        .glitch { animation: shake 0.2s linear infinite; filter: contrast(200%) brightness(150%); }
+        @keyframes shake { 0% { transform: translate(1px, 1px); } 25% { transform: translate(-1px, -1px); } 50% { transform: translate(1px, -1px); } 75% { transform: translate(-1px, 1px); } 100% { transform: translate(0); } }
+
+        #boot-screen { position: absolute; width: 100%; height: 100%; background: black; z-index: 3000; padding: 40px; box-sizing: border-box; white-space: pre-wrap; color: var(--neon); }
+
+        #main-container { display: none; grid-template-columns: 1fr 350px; height: 100vh; }
+
+        /* Terminal Styling */
+        #terminal { display: flex; flex-direction: column; padding: 20px; border-right: 1px solid var(--dim); overflow: hidden; position: relative; }
+        #history { flex-grow: 1; overflow-y: auto; scroll-behavior: smooth; margin-bottom: 10px; font-size: 0.95em; }
+        .input-area { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--dim); }
+        input { background: transparent; border: none; color: white; flex-grow: 1; font-family: inherit; font-size: 1.1em; outline: none; caret-color: var(--neon); }
+
+        /* Sidebar Styling */
+        #sidebar { background: #080808; display: flex; flex-direction: column; padding: 20px; border-left: 1px solid var(--dim); gap: 20px; }
+        .module { border: 1px solid var(--dim); padding: 10px; background: #000; }
+        .module-title { color: var(--warn); font-size: 0.8em; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.85em; }
+        .progress-bar { width: 100%; height: 4px; background: #111; margin-top: 5px; }
+        #trace-progress { height: 100%; background: var(--err); width: 0%; transition: width 0.5s; }
+
+        /* Network Map */
+        #net-map { height: 120px; border: 1px dashed var(--dim); position: relative; margin-top: 10px; overflow: hidden; background: radial-gradient(circle, #001100 0%, #000 70%); }
+        .node { position: absolute; width: 8px; height: 8px; background: var(--dim); border-radius: 50%; }
+        .node.active { background: var(--neon); box-shadow: 0 0 10px var(--neon); }
+        .node.target { background: var(--err); }
+
+        /* Formatting Classes */
+        .success { color: #50fa7b; }
+        .err { color: var(--err); }
+        .info { color: var(--blue); }
+        .dim { color: #006400; }
+        .prompt-user { color: #fff; font-weight: bold; }
+        .prompt-path { color: var(--blue); }
+    </style>
+</head>
+<body>
+
+<div id="boot-screen"></div>
+
+<div id="main-container">
+    <div id="terminal">
+        <div id="history"></div>
+        <div class="input-area">
+            <span id="prompt-container">
+                <span class="prompt-user">guest@omni</span>:<span class="prompt-path">~</span>$
+            </span>
+            <input type="text" id="cmd" autofocus spellcheck="false" autocomplete="off">
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div class="module">
+            <div class="module-title">Status: Encrypted Connection</div>
+            <div class="stat-row">TRACE LEVEL <span id="trace-val">0%</span></div>
+            <div class="progress-bar"><div id="trace-progress"></div></div>
+            <div class="stat-row" style="margin-top:10px">UPLINK <span id="latency">--</span></div>
+            <div class="stat-row">ENCRYPTION <span class="success">AES-256</span></div>
+        </div>
+
+        <div class="module">
+            <div class="module-title">Network Topology</div>
+            <div id="net-map">
+                <div class="node active" style="top:20%; left:20%" title="Localhost"></div>
+                <div class="node" id="node-router" style="top:50%; left:50%" title="Gateway"></div>
+                <div class="node target" id="node-target" style="top:80%; left:70%" title="Target"></div>
+            </div>
+        </div>
+
+        <div class="module" id="mission-log">
+            <div class="module-title">Active Mission</div>
+            <div id="m-1">• Scan Gateway (nmap)</div>
+            <div id="m-2" class="dim">• Pivot to Target IP</div>
+            <div id="m-3" class="dim">• Extract 'Root' key</div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* --- VFS CONFIG --- */
+const vfs = {
+    "~": { type: "dir", children: ["bin", "home", "sys"] },
+    "~/bin": { type: "dir", children: ["nmap", "ssh", "decrypt", "clear", "help"] },
+    "~/home": { type: "dir", children: ["guest"] },
+    "~/home/guest": { type: "dir", children: ["notes.txt", "creds.md5"] },
+    "~/sys": { type: "dir", children: ["config", "logs"] }
+};
+
+const fileData = {
+    "notes.txt": "Gateway IP: 192.168.1.1\nTarget Node: 192.168.1.55 (Deep Storage)",
+    "creds.md5": "admin:21232f297a57a5a743894a0e4a801fc3",
+    "config": "NET_MASK=255.255.255.0",
+    "logs": "SSH_RETRY_EXCEEDED: 192.168.1.42"
+};
+
+let currentPath = "~";
+let traceLevel = 0;
+let isRoot = false;
+
+/* --- UI ENGINE --- */
+const history = document.getElementById('history');
+const cmdInput = document.getElementById('cmd');
+const bootScreen = document.getElementById('boot-screen');
+
+function print(text, type = "") {
+    const div = document.createElement('div');
+    div.className = `line ${type}`;
+    div.innerHTML = text.replace(/\n/g, '<br>');
+    history.appendChild(div);
+    history.scrollTop = history.scrollHeight;
+}
+
+function updateTrace(amt) {
+    traceLevel = Math.min(100, traceLevel + amt);
+    document.getElementById('trace-val').innerText = traceLevel + "%";
+    document.getElementById('trace-progress').style.width = traceLevel + "%";
+    if(traceLevel > 70) triggerGlitch(true);
+}
+
+function triggerGlitch(permanent = false) {
+    document.body.classList.add('glitch');
+    if(!permanent) setTimeout(() => document.body.classList.remove('glitch'), 400);
+}
+
+/* --- BOOT LOGIC --- */
+const bootSequence = [
+    "OMNI-BIOS v5.0.0 (C) 2026",
+    "Initializing Neural-Static Uplink...",
+    "Mounting /dev/sda2 on /sys...",
+    "Establishing peer-to-peer relay [OK]",
+    "System checks complete. Welcome, Operator."
+];
+
+let bIdx = 0;
+function runBoot() {
+    if (bIdx < bootSequence.length) {
+        bootScreen.innerHTML += bootSequence[bIdx] + "\n";
+        bIdx++;
+        setTimeout(runBoot, 400);
+    } else {
+        bootScreen.innerHTML += "\n[ PRESS ENTER TO START SESSION ]";
+    }
+}
+runBoot();
+
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && bootScreen.style.display !== 'none') {
+        bootScreen.style.display = 'none';
+        document.getElementById('main-container').style.display = 'grid';
+        print("OMNI-OS v5.0 Tactical Shell", "info");
+        print("Unauthorized access is a felony. Stealth protocols ACTIVE.\n");
+    }
+});
+
+/* --- COMMANDS --- */
+const commands = {
+    "help": () => "Available: ls, cd, cat, nmap, decrypt, ssh, clear, whoami",
+    
+    "whoami": () => isRoot ? "root (System Administrator)" : "guest (Temporary Access)",
+
+    "clear": () => { history.innerHTML = ''; return ''; },
+
+    "ls": () => {
+        const dir = vfs[currentPath];
+        return dir.children.map(item => {
+            return vfs[`${currentPath}/${item}`] ? `<span class="success">[${item}]</span>` : item;
+        }).join("  ");
+    },
+
+    "cd": (args) => {
+        const dest = args[0];
+        if (!dest || dest === "~") currentPath = "~";
+        else if (dest === "..") {
+            const parts = currentPath.split("/");
+            if (parts.length > 1) parts.pop();
+            currentPath = parts.join("/");
+        } else {
+            const potential = `${currentPath}/${dest}`;
+            if (vfs[potential]) currentPath = potential;
+            else return `<span class="err">Directory not found: ${dest}</span>`;
+        }
+        updatePrompt();
+        return "";
+    },
+
+    "cat": (args) => {
+        const file = args[0];
+        if (fileData[file]) {
+            if (file === "notes.txt") document.getElementById('m-1').classList.add('success');
+            return fileData[file];
+        }
+        return `<span class="err">File not found: ${file}</span>`;
+    },
+
+    "nmap": (args) => {
+        if (!args[0]) return "Usage: nmap [target_ip]";
+        print(`Scanning ${args[0]}...`, "dim");
+        updateTrace(15);
+        setTimeout(() => {
+            print(`Target ${args[0]} responding.`, "success");
+            print("Port 22: OPEN\nPort 80: CLOSED\nPort 443: OPEN", "info");
+            document.getElementById('node-router').classList.add('active');
+            document.getElementById('m-1').classList.add('success');
+        }, 2000);
+        return "Initiating packet broadcast...";
+    },
+
+    "decrypt": (args) => {
+        if (args[0] === "21232f297a57a5a743894a0e4a801fc3") {
+            updateTrace(10);
+            document.getElementById('m-2').classList.remove('dim');
+            return "<span class='success'>RESULT: 'admin'</span>";
+        }
+        return "Decryption failed. Insufficient entropy.";
+    },
+
+    "ssh": (args) => {
+        if (args[0] === "192.168.1.55") {
+            const pass = prompt("Enter SSH Password:");
+            if (pass === "admin") {
+                isRoot = true;
+                updatePrompt();
+                document.getElementById('node-target').classList.add('active');
+                document.getElementById('m-3').classList.remove('dim');
+                document.body.style.boxShadow = "inset 0 0 100px #00ff41";
+                return "<span class='success'>ROOT ACCESS GRANTED.</span>";
+            } else {
+                updateTrace(25);
+                triggerGlitch();
+                return "<span class='err'>AUTHENTICATION FAILURE.</span>";
+            }
+        }
+        return "ssh: No route to host.";
+    }
+};
+
+function updatePrompt() {
+    const userStr = isRoot ? 'root' : 'guest';
+    const char = isRoot ? '#' : '$';
+    document.getElementById('prompt-container').innerHTML = 
+        `<span class="prompt-user">${userStr}@omni</span>:<span class="prompt-path">${currentPath}</span>${char}`;
+}
+
+/* --- EVENT HANDLERS --- */
+cmdInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        const val = cmdInput.value.trim();
+        const [cmd, ...args] = val.split(" ");
+        
+        print(`<span class="prompt-user">${isRoot?'root':'guest'}@omni</span>:${currentPath}$ ${val}`);
+        
+        if (commands[cmd]) {
+            const out = commands[cmd](args);
+            if (out) print(out);
+        } else if (val !== "") {
+            print(`Command not found: ${cmd}`, "err");
+        }
+        
+        cmdInput.value = "";
+    }
+
+    if (e.key === 'Tab') {
+        e.preventDefault();
+        const val = cmdInput.value.toLowerCase();
+        const dir = vfs[currentPath];
+        const options = [...Object.keys(commands), ...dir.children];
+        const match = options.find(o => o.startsWith(val));
+        if (match) cmdInput.value = match;
+    }
+});
+
+// Sidebar Latency Sim
+setInterval(() => {
+    document.getElementById('latency').innerText = Math.floor(Math.random() * 30) + 15 + "ms";
+}, 2000);
+</script>
+</body>
+</html>

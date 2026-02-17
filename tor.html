@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Tor Browser | Tactical Hub</title>
+    <style>
+        :root {
+            --tor-purple: #7d4698;
+            --tor-dark: #1a1a1a;
+            --tor-bg: #0a0a0a;
+            --neon-green: #00ff41;
+            --text-grey: #a0a0a0;
+            --border: #333;
+        }
+
+        body, html { margin: 0; padding: 0; background: var(--tor-bg); color: white; font-family: 'Segoe UI', Tahoma, sans-serif; height: 100vh; overflow: hidden; }
+
+        /* --- CONNECTION SCREEN (Unchanged logic) --- */
+        #connect-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: radial-gradient(circle, #2e1a3a 0%, #050505 100%); z-index: 1000; position: absolute; width: 100%; }
+        .tor-logo { width: 80px; filter: drop-shadow(0 0 15px var(--tor-purple)); margin-bottom: 20px; }
+        .btn-connect { background: var(--tor-purple); color: white; border: none; padding: 12px 45px; cursor: pointer; border-radius: 4px; font-weight: bold; }
+
+        /* --- BROWSER UI --- */
+        #browser-ui { display: none; flex-direction: column; height: 100vh; background: #fff; }
+
+        .nav-bar { background: var(--tor-dark); padding: 8px 15px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #000; }
+        
+        .nav-btns { display: flex; gap: 10px; margin-right: 10px; }
+        .nav-btn { background: none; border: none; color: white; cursor: pointer; font-size: 18px; opacity: 0.5; transition: 0.2s; }
+        .nav-btn.active { opacity: 1; }
+        .nav-btn:hover { color: var(--tor-purple); }
+
+        .search-wrapper { flex-grow: 1; position: relative; }
+        .address-bar { background: #000; border: 1px solid var(--tor-purple); color: var(--neon-green); width: 100%; padding: 6px 15px; border-radius: 20px; font-family: monospace; outline: none; box-sizing: border-box; }
+
+        /* Suggestions Dropdown */
+        #suggestions {
+            position: absolute; top: 110%; left: 10px; right: 10px;
+            background: #1a1a1a; border: 1px solid var(--border);
+            border-radius: 8px; display: none; z-index: 2000;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .suggest-item { padding: 10px 15px; cursor: pointer; font-size: 13px; color: #ccc; border-bottom: 1px solid #222; }
+        .suggest-item:hover { background: var(--tor-purple); color: white; }
+        .suggest-header { padding: 8px 15px; font-size: 10px; color: var(--tor-purple); text-transform: uppercase; font-weight: bold; }
+
+        /* --- LAYOUT --- */
+        #main-layout { display: flex; flex-grow: 1; overflow: hidden; }
+        #content-area { flex-grow: 1; overflow-y: auto; color: #333; padding: 40px; }
+
+        /* --- WEB PAGES --- */
+        .page { display: none; max-width: 800px; margin: 0 auto; }
+        .page.active { display: block; }
+        .onion-result { padding: 15px; border-bottom: 1px solid #eee; margin-bottom: 10px; }
+        .onion-result a { color: #1a0dab; text-decoration: none; font-size: 1.1em; font-weight: bold; }
+        .onion-result .url { color: #006621; font-size: 0.85em; display: block; }
+
+        .tool-box { background: #f4f4f4; border-left: 5px solid var(--tor-purple); padding: 20px; border-radius: 4px; margin-top: 20px; }
+        .code-snippet { background: #222; color: #00ff41; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="connect-screen">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/1/15/Tor-logo-2011-flat.svg" class="tor-logo">
+    <h3 id="status-text">Tor Browser</h3>
+    <button class="btn-connect" onclick="startConnection()">Connect</button>
+</div>
+
+<div id="browser-ui">
+    <div class="nav-bar">
+        <div class="nav-btns">
+            <button class="nav-btn" id="back-btn" onclick="navBack()">←</button>
+            <button class="nav-btn" id="fwd-btn" onclick="navForward()">→</button>
+        </div>
+        <div class="search-wrapper">
+            <input type="text" class="address-bar" id="url-bar" value="onion://search.onion" onfocus="showSuggestions()" onblur="hideSuggestions()">
+            <div id="suggestions">
+                <div class="suggest-header">Recent Searches / Suggestions</div>
+                <div class="suggest-item" onmousedown="goTO('onion://overlord.onion')">Project Overlord (Vulnerability Intel)</div>
+                <div class="suggest-item" onmousedown="goTO('onion://tools.onion')">Tactical Toolkit Docs (Nmap/MSF)</div>
+                <div class="suggest-item" onmousedown="goTO('onion://cracking.onion')">MD5 Rainbow Tables</div>
+            </div>
+        </div>
+        <button onclick="handleNavigation()" style="background:var(--tor-purple); color:white; border:none; padding:6px 15px; border-radius:4px; cursor:pointer">Go</button>
+    </div>
+
+    <div id="main-layout">
+        <div id="content-area">
+            <div id="page-search" class="page active">
+                <h1 style="color:var(--tor-purple); text-align:center">The Onion Search</h1>
+                <p style="text-align:center; color:#666">Secure Search for Hidden Services</p>
+                <div class="onion-result">
+                    <a href="#" onclick="goTO('onion://overlord.onion')">Operation Overlord - Internal Node 192.168.1.42</a>
+                    <span class="url">overlord66.onion</span>
+                    <p>Leaked logs from the Target Server. Contains SMB vulnerability reports.</p>
+                </div>
+                <div class="onion-result">
+                    <a href="#" onclick="goTO('onion://tools.onion')">Official Tactical Toolkit Manual</a>
+                    <span class="url">hacktools.onion</span>
+                    <p>Documentation for <b>Nmap</b>, <b>Metasploit</b>, and <b>SSH</b> remote tunneling.</p>
+                </div>
+            </div>
+
+            <div id="page-overlord" class="page">
+                <h2 style="color:red">Target Intel: Project Overlord</h2>
+                <div class="tool-box">
+                    <p><b>Target:</b> 192.168.1.42</p>
+                    <p><b>Known Services:</b> Port 445 (SMB), Port 22 (SSH)</p>
+                    <p><b>Intel:</b> The system is unpatched against EternalBlue.</p>
+                    <div class="code-snippet">use exploit/windows/smb/ms17_010_eternalblue</div>
+                </div>
+            </div>
+
+            <div id="page-tools" class="page">
+                <h2>Tactical Toolkit Documentation</h2>
+                <div class="tool-box">
+                    <h3>Nmap (Network Mapper)</h3>
+                    <p>Use for host discovery. Recommended command:</p>
+                    <div class="code-snippet">nmap -sV -O 192.168.1.42</div>
+                </div>
+                <div class="tool-box">
+                    <h3>Metasploit Framework</h3>
+                    <p>Use to launch exploits once a vulnerability is identified via nmap.</p>
+                </div>
+            </div>
+
+            <div id="page-cracking" class="page">
+                <h2>Credential Decryption Hub</h2>
+                <div class="tool-box">
+                    <p>Found a hash? Use the <b>decrypt</b> command in your terminal.</p>
+                    <p><b>Current Target Hash:</b> 21232f297a57a5a743894a0e4a801fc3</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* --- NAVIGATION ENGINE --- */
+    let historyStack = ['onion://search.onion'];
+    let forwardStack = [];
+
+    function startConnection() {
+        const status = document.getElementById('status-text');
+        status.innerText = "Building Circuit...";
+        setTimeout(() => {
+            document.getElementById('connect-screen').style.display = 'none';
+            document.getElementById('browser-ui').style.display = 'flex';
+        }, 1500);
+    }
+
+    function showSuggestions() { document.getElementById('suggestions').style.display = 'block'; }
+    function hideSuggestions() { setTimeout(() => { document.getElementById('suggestions').style.display = 'none'; }, 200); }
+
+    function goTO(url, pushToStack = true) {
+        if (pushToStack) {
+            historyStack.push(url);
+            forwardStack = []; // Clear forward on new nav
+        }
+        
+        document.getElementById('url-bar').value = url;
+        updateNavButtons();
+
+        // Page Mapping
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        if (url.includes('overlord')) document.getElementById('page-overlord').classList.add('active');
+        else if (url.includes('tools')) document.getElementById('page-tools').classList.add('active');
+        else if (url.includes('cracking')) document.getElementById('page-cracking').classList.add('active');
+        else document.getElementById('page-search').classList.add('active');
+
+        document.getElementById('content-area').scrollTop = 0;
+    }
+
+    function navBack() {
+        if (historyStack.length > 1) {
+            const current = historyStack.pop();
+            forwardStack.push(current);
+            goTO(historyStack[historyStack.length - 1], false);
+        }
+    }
+
+    function navForward() {
+        if (forwardStack.length > 0) {
+            const next = forwardStack.pop();
+            historyStack.push(next);
+            goTO(next, false);
+        }
+    }
+
+    function updateNavButtons() {
+        document.getElementById('back-btn').classList.toggle('active', historyStack.length > 1);
+        document.getElementById('fwd-btn').classList.toggle('active', forwardStack.length > 0);
+    }
+
+    function handleNavigation() { goTO(document.getElementById('url-bar').value); }
+
+    document.getElementById('url-bar').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleNavigation();
+    });
+</script>
+
+</body>
+</html> 
